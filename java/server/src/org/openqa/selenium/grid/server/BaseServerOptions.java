@@ -87,10 +87,18 @@ public class BaseServerOptions {
 
     int port = getPort();
 
-    try {
-      return new URI("http", null, host, port, null, null, null);
-    } catch (URISyntaxException e) {
-      throw new ConfigException("Cannot determine external URI: " + e.getMessage());
+    if (config.getSslEnabled()) {
+      try {
+        return new URI("https", null, host, port, null, null, null);
+      } catch (URISyntaxException e) {
+        throw new ConfigException("Cannot determine external URI: " + e.getMessage());
+      }
+    } else {
+      try {
+        return new URI("http", null, host, port, null, null, null);
+      } catch (URISyntaxException e) {
+        throw new ConfigException("Cannot determine external URI: " + e.getMessage());
+      }
     }
   }
 
