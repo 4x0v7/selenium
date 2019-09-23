@@ -28,23 +28,31 @@ import org.eclipse.jetty.security.ConstraintSecurityHandler;
 import org.eclipse.jetty.server.Connector;
 import org.eclipse.jetty.server.HttpConfiguration;
 import org.eclipse.jetty.server.HttpConnectionFactory;
+import org.eclipse.jetty.server.SecureRequestCustomizer;
 import org.eclipse.jetty.server.ServerConnector;
+import org.eclipse.jetty.server.SslConnectionFactory;
+import org.eclipse.jetty.http.HttpVersion;
 import org.eclipse.jetty.servlet.ServletContextHandler;
 import org.eclipse.jetty.servlet.ServletHolder;
 import org.eclipse.jetty.util.log.JavaUtilLog;
 import org.eclipse.jetty.util.log.Log;
 import org.eclipse.jetty.util.security.Constraint;
+import org.eclipse.jetty.util.ssl.SslContextFactory;
 import org.eclipse.jetty.util.thread.QueuedThreadPool;
 
 import javax.servlet.DispatcherType;
 import javax.servlet.Servlet;
+import java.io.File;
 import java.io.UncheckedIOException;
 import java.net.BindException;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.security.KeyStore;
 import java.util.EnumSet;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.logging.Logger;
+import java.util.logging.Level;
 
 import static java.util.concurrent.TimeUnit.SECONDS;
 
@@ -69,10 +77,18 @@ public class BaseServer<T extends BaseServer> implements Server<T> {
       }
     });
 
-    try {
-      this.url = new URL("http", host, port, "");
-    } catch (MalformedURLException e) {
-      throw new UncheckedIOException(e);
+    if (options.getSslEnabled()) {
+      try {
+          this.url = new URL("https", host, port, "");
+      } catch (MalformedURLException e) {
+        throw new UncheckedIOException(e);
+      }
+    } else {
+      try {
+        this.url = new URL("http", host, port, "");
+      } catch (MalformedURLException e) {
+        throw new UncheckedIOException(e);
+      }
     }
 
     Log.setLog(new JavaUtilLog());
@@ -116,16 +132,63 @@ public class BaseServer<T extends BaseServer> implements Server<T> {
 
     server.setHandler(servletContextHandler);
 
-    HttpConfiguration httpConfig = new HttpConfiguration();
-    httpConfig.setSecureScheme("https");
+    if (options.getSslEnabled()) {
 
-    ServerConnector http = new ServerConnector(server, new HttpConnectionFactory(httpConfig));
-    options.getHostname().ifPresent(http::setHost);
-    http.setPort(getUrl().getPort());
+      LOG.info(String.format("Selenium Server will start on port %s with TLSv1.2 enabled", options.getPort()));
 
-    http.setIdleTimeout(500000);
+      try {
+        File sslCertificate = new File(options.getSslCertificate());
+        File sslCertificateKey = new File(options.getSslCertificateKey());
+        KeyStore keyStore = SslKeystoreCreator.loadKeyStore(sslCertificate, sslCertificateKey, Optional.ofNullable(null));
 
-    server.setConnectors(new Connector[]{http});
+        // SSL Context Factory
+        SslContextFactory sslContextFactory = new SslContextFactory();
+        sslContextFactory.setKeyStore(keyStore);
+        sslContextFactory.setKeyStorePassword("");
+        // Use some secure defaults.
+        // Clients should be updated if they don't support TLS 1.2 yet
+        sslContextFactory.setExcludeProtocols("SSL","SSLv2","SSLv2Hello","SSLv3","TLSv1","TLSv1.1");
+        sslContextFactory.setIncludeProtocols("TLSv1.2");
+        sslContextFactory.setExcludeCipherSuites(
+                "SSL_RSA_WITH_DES_CBC_SHA",
+                "SSL_DHE_RSA_WITH_DES_CBC_SHA",
+                "SSL_DHE_DSS_WITH_DES_CBC_SHA",
+                "SSL_RSA_EXPORT_WITH_RC4_40_MD5",
+                "SSL_RSA_EXPORT_WITH_DES40_CBC_SHA",
+                "SSL_DHE_RSA_EXPORT_WITH_DES40_CBC_SHA",
+                "SSL_DHE_DSS_EXPORT_WITH_DES40_CBC_SHA");
+
+        // SSL HTTP Configuration
+        HttpConfiguration httpsConfig = new HttpConfiguration();
+        httpsConfig.setSecureScheme("https");
+        httpsConfig.setSecurePort(getUrl().getPort());
+        httpsConfig.addCustomizer(new SecureRequestCustomizer());
+
+        // SSL Connector
+        ServerConnector https = new ServerConnector(server,
+                                new SslConnectionFactory(sslContextFactory,HttpVersion.HTTP_1_1.asString()),
+                                new HttpConnectionFactory(httpsConfig));
+        options.getHostname().ifPresent(https::setHost);
+        https.setPort(getUrl().getPort());
+
+        https.setIdleTimeout(500000);
+
+        server.setConnectors(new Connector[]{https});
+      } catch (Exception e) {
+        LOG.log(Level.SEVERE, "Failed to start server with SSL, check your certificates", e);
+      }
+    } else {
+      HttpConfiguration httpConfig = new HttpConfiguration();
+      httpConfig.setSecureScheme("https");
+
+      ServerConnector http = new ServerConnector(server, new HttpConnectionFactory(httpConfig));
+      options.getHostname().ifPresent(http::setHost);
+      http.setPort(getUrl().getPort());
+
+      http.setIdleTimeout(500000);
+
+      server.setConnectors(new Connector[]{http});
+    }
   }
 
   @Override
