@@ -33,6 +33,18 @@ public class BaseServerFlags {
   @ConfigValue(section = "server", name = "port")
   private int port;
 
+  @Parameter(description = "Boolean to enable SSL. SSL will be enabled on the same port specified by `--port`", names = {"--ssl"})
+  @ConfigValue(section = "server", name = "ssl-enabled")
+  private boolean sslEnabled = false;
+
+  @Parameter(description = "Path to the SSL certificate in PEM format", names = {"--sslcert"})
+  @ConfigValue(section = "server", name = "ssl-certificate")
+  private String sslCertificate;
+
+  @Parameter(description = "Path to the SSL certificate private key in PEM format", names = {"--sslkey"})
+  @ConfigValue(section = "server", name = "ssl-certificate-key")
+  private String sslCertificateKey;
+
   @Parameter(description = "Maximum number of listener threads.", names = "--max-threads")
   @ConfigValue(section = "server", name = "max-threads")
   private int maxThreads = Runtime.getRuntime().availableProcessors() * 3;

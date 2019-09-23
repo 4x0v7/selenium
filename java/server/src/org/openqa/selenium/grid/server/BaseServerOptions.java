@@ -56,6 +56,19 @@ public class BaseServerOptions {
     return port;
   }
 
+  // SSL Options
+  public boolean getSslEnabled() {
+    return config.getBool("server", "ssl-enabled").orElse(false);
+  }
+
+  public String getSslCertificate() {
+    return config.get("server", "ssl-certificate").orElse(null);
+  }
+
+  public String getSslCertificateKey() {
+    return config.get("server", "ssl-certificate-key").orElse(null);
+  }
+
   public int getMaxServerThreads() {
     int count = config.getInt("server", "max-threads")
         .orElse(200);
