@@ -87,7 +87,7 @@ public class BaseServerOptions {
 
     int port = getPort();
 
-    if (config.getSslEnabled()) {
+    if (config.getBool("server", "ssl-enabled").orElse(false)) {
       try {
         return new URI("https", null, host, port, null, null, null);
       } catch (URISyntaxException e) {

@@ -139,7 +139,7 @@ public class BaseServer<T extends BaseServer> implements Server<T> {
       try {
         File sslCertificate = new File(options.getSslCertificate());
         File sslCertificateKey = new File(options.getSslCertificateKey());
-        KeyStore keyStore = SslKeystoreCreator.loadKeyStore(sslCertificate, sslCertificateKey, Optional.ofNullable(null));
+        KeyStore keyStore = SslKeystoreCreator.loadKeyStore(sslCertificate, sslCertificateKey);
 
         // SSL Context Factory
         SslContextFactory sslContextFactory = new SslContextFactory();
@@ -149,14 +149,6 @@ public class BaseServer<T extends BaseServer> implements Server<T> {
         // Clients should be updated if they don't support TLS 1.2 yet
         sslContextFactory.setExcludeProtocols("SSL","SSLv2","SSLv2Hello","SSLv3","TLSv1","TLSv1.1");
         sslContextFactory.setIncludeProtocols("TLSv1.2");
-        sslContextFactory.setExcludeCipherSuites(
-                "SSL_RSA_WITH_DES_CBC_SHA",
-                "SSL_DHE_RSA_WITH_DES_CBC_SHA",
-                "SSL_DHE_DSS_WITH_DES_CBC_SHA",
-                "SSL_RSA_EXPORT_WITH_RC4_40_MD5",
-                "SSL_RSA_EXPORT_WITH_DES40_CBC_SHA",
-                "SSL_DHE_RSA_EXPORT_WITH_DES40_CBC_SHA",
-                "SSL_DHE_DSS_EXPORT_WITH_DES40_CBC_SHA");
 
         // SSL HTTP Configuration
         HttpConfiguration httpsConfig = new HttpConfiguration();

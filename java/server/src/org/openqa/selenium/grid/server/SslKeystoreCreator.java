@@ -72,43 +72,34 @@ public final class SslKeystoreCreator
                     "-+END\\s+.*CERTIFICATE[^-]*-+",            // Footer
             CASE_INSENSITIVE);
 
-    private static final Pattern KEY_PATTERN = Pattern.compile(
-            "-+BEGIN\\s+.*PRIVATE\\s+KEY[^-]*-+(?:\\s|\\r|\\n)+" + // Header
+    private static final Pattern RSA_KEY_PATTERN = Pattern.compile(
+            "-+BEGIN\\s+RSA\\s+PRIVATE\\s+KEY[^-]*-+(?:\\s|\\r|\\n)+" + // Header
                     "([a-z0-9+/=\\r\\n]+)" +                       // Base64 text
-                    "-+END\\s+.*PRIVATE\\s+KEY[^-]*-+",            // Footer
+                    "-+END\\s+RSA\\s+PRIVATE\\s+KEY[^-]*-+",            // Footer
             CASE_INSENSITIVE);
 
     private SslKeystoreCreator() {}
 
-    public static KeyStore loadTrustStore(File certificateChainFile)
-            throws IOException, GeneralSecurityException
-    {
-        KeyStore keyStore = KeyStore.getInstance("JKS");
-        keyStore.load(null, null);
+    // public static KeyStore loadTrustStore(File certificateChainFile)
+    //         throws IOException, GeneralSecurityException
+    // {
+    //     KeyStore keyStore = KeyStore.getInstance("JKS");
+    //     keyStore.load(null, null);
 
-        List<X509Certificate> certificateChain = readCertificateChain(certificateChainFile);
-        for (X509Certificate certificate : certificateChain) {
-            X500Principal principal = certificate.getSubjectX500Principal();
-            keyStore.setCertificateEntry(principal.getName("RFC2253"), certificate);
-        }
-        return keyStore;
-    }
+    //     List<X509Certificate> certificateChain = readCertificateChain(certificateChainFile);
+    //     for (X509Certificate certificate : certificateChain) {
+    //         X500Principal principal = certificate.getSubjectX500Principal();
+    //         keyStore.setCertificateEntry(principal.getName("RFC2253"), certificate);
+    //     }
+    //     return keyStore;
+    // }
 
-    public static KeyStore loadKeyStore(File certificateChainFile, File privateKeyFile, Optional<String> keyPassword)
+    public static KeyStore loadKeyStore(File certificateChainFile, File privateKeyFile)
             throws IOException, GeneralSecurityException
     {
         // PKCS8EncodedKeySpec encodedKeySpec = readPrivateKey(privateKeyFile, keyPassword);
 
-        PrivateKey privateKey = readPrivateKey(privateKeyFile, keyPassword);
-        // PrivateKey key;
-        // try {
-        //     KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-        //     key = keyFactory.generatePrivate(encodedKeySpec);
-        // }
-        // catch (InvalidKeySpecException ignore) {
-        //     KeyFactory keyFactory = KeyFactory.getInstance("DSA");
-        //     key = keyFactory.generatePrivate(encodedKeySpec);
-        // }
+        PrivateKey privateKey = readPrivateKey(privateKeyFile);
 
         List<X509Certificate> certificateChain = readCertificateChain(certificateChainFile);
         if (certificateChain.isEmpty()) {
@@ -117,7 +108,7 @@ public final class SslKeystoreCreator
 
         KeyStore keyStore = KeyStore.getInstance("JKS");
         keyStore.load(null, null);
-        keyStore.setKeyEntry("key", privateKey, keyPassword.orElse("").toCharArray(), certificateChain.stream().toArray(Certificate[]::new));
+        keyStore.setKeyEntry("key", privateKey, ("").toCharArray(), certificateChain.stream().toArray(Certificate[]::new));
         return keyStore;
     }
 
@@ -140,89 +131,45 @@ public final class SslKeystoreCreator
         return certificates;
     }
 
-    private static PrivateKey readPrivateKey(File keyFile, Optional<String> keyPassword) throws IOException, GeneralSecurityException {
+    private static PrivateKey readPrivateKey(File keyFile) throws IOException, GeneralSecurityException {
         String content = readFile(keyFile);
 
-        Matcher matcher = KEY_PATTERN.matcher(content);
+        Matcher matcher = RSA_KEY_PATTERN.matcher(content);
         if (!matcher.find()) {
             throw new KeyStoreException("found no private key: " + keyFile);
         }
         byte[] encodedKey = base64Decode(matcher.group(1));
 
-        if (!keyPassword.isPresent()) {
             try {
-                PrivateKey privateKey = readPrivateKeyPKCS1PEM(encodedKey);
+                PrivateKey privateKey = readRSAPrivateKeyPKCS1PEM(encodedKey);
                 return privateKey;
             } catch (Exception e) {
-
+                // TODO
             }
-            // return new EncryptedPrivateKeyInfo(encodedKey);
-
-        } else {
-            try {
-                PrivateKey privateKey = readPrivateKeyPKCS8PEM(encodedKey);
-                return privateKey;
-            } catch (Exception e) {
-
-            }
-        }
         return null;
-        // PrivateKey privateKey = new PrivateKey();
-        // return (privateKey);
-
-        // EncryptedPrivateKeyInfo encryptedPrivateKeyInfo = new EncryptedPrivateKeyInfo(encodedKey);
-        // SecretKeyFactory keyFactory = SecretKeyFactory.getInstance(encryptedPrivateKeyInfo.getAlgName());
-        // SecretKey secretKey = keyFactory.generateSecret(new PBEKeySpec(keyPassword.get().toCharArray()));
-
-        // Cipher cipher = Cipher.getInstance(encryptedPrivateKeyInfo.getAlgName());
-        // cipher.init(DECRYPT_MODE, secretKey, encryptedPrivateKeyInfo.getAlgParameters());
-
-        // return encryptedPrivateKeyInfo.getKeySpec(cipher);
     }
 
-    private static PrivateKey readPrivateKeyPKCS1PEM(byte[] encodedKey) throws Exception {
-        // String content = new String(
-        //         Files.readAllBytes(Paths.get(ClassLoader.getSystemResource("server.key.pkcs1.pem").toURI())));
-        // content = content.replaceAll("\\n", "").replace("-----BEGIN RSA PRIVATE KEY-----", "")
-        //         .replace("-----END RSA PRIVATE KEY-----", "");
-        // System.out.println("'" + content + "'");
+    private static PrivateKey readRSAPrivateKeyPKCS1PEM(byte[] encodedKey) throws Exception {
+
         byte[] bytes = encodedKey;
- 
+
         DerInputStream derReader = new DerInputStream(bytes);
         DerValue[] seq = derReader.getSequence(0);
         // skip version seq[0];
-        BigInteger modulus = seq[1].getBigInteger();
-        BigInteger publicExp = seq[2].getBigInteger();
+        BigInteger modulus    = seq[1].getBigInteger();
+        BigInteger publicExp  = seq[2].getBigInteger();
         BigInteger privateExp = seq[3].getBigInteger();
-        BigInteger prime1 = seq[4].getBigInteger();
-        BigInteger prime2 = seq[5].getBigInteger();
-        BigInteger exp1 = seq[6].getBigInteger();
-        BigInteger exp2 = seq[7].getBigInteger();
-        BigInteger crtCoef = seq[8].getBigInteger();
- 
-        RSAPrivateCrtKeySpec keySpec =
-                new RSAPrivateCrtKeySpec(modulus, publicExp, privateExp, prime1, prime2, exp1, exp2, crtCoef);
+        BigInteger prime1     = seq[4].getBigInteger();
+        BigInteger prime2     = seq[5].getBigInteger();
+        BigInteger exp1       = seq[6].getBigInteger();
+        BigInteger exp2       = seq[7].getBigInteger();
+        BigInteger crtCoef    = seq[8].getBigInteger();
+
+        RSAPrivateCrtKeySpec keySpec = new RSAPrivateCrtKeySpec(modulus, publicExp, privateExp, prime1, prime2, exp1, exp2, crtCoef);
         KeyFactory keyFactory = KeyFactory.getInstance("RSA");
         PrivateKey privateKey = keyFactory.generatePrivate(keySpec);
-        // System.out.println(privateKey);
         return privateKey;
     }
-
-        private static PrivateKey readPrivateKeyPKCS8PEM(byte[] encodedKey) throws Exception {
-        // String content = new String(
-        //         Files.readAllBytes(Paths.get(ClassLoader.getSystemResource("server.key.pkcs8.pem").toURI())));
-        // content = content.replaceAll("\\n", "").replace("-----BEGIN PRIVATE KEY-----", "")
-        //         .replace("-----END PRIVATE KEY-----", "");
-        // System.out.println("'" + content + "'");
-        byte[] bytes = encodedKey;
- 
-        PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(bytes);
-        KeyFactory keyFactory = KeyFactory.getInstance("RSA");
-        PrivateKey privateKey = keyFactory.generatePrivate(keySpec);
-        // System.out.println(privateKey);
-        return privateKey;
-    }
-
 
     private static byte[] base64Decode(String base64)
     {
