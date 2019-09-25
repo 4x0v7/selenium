@@ -49,7 +49,6 @@ import sun.security.util.DerValue;
 
 public final class SslKeystoreCreator {
 
-    // Regex to Match PKCS#1
     private static final Pattern CERT_PATTERN = Pattern
         .compile(
             "-+BEGIN\\s+.*CERTIFICATE[^-]*-+(?:\\s|\\r|\\n)+" +
@@ -58,6 +57,13 @@ public final class SslKeystoreCreator {
             CASE_INSENSITIVE
         );
 
+    /**
+     * Regex to match a PKCS#1 RSA private key
+     * <p>
+     *
+     * {@link https://crypto.stackexchange.com/a/52127}
+     *
+     */
     private static final Pattern RSA_KEY_PATTERN = Pattern
         .compile(
             "-+BEGIN\\s+RSA\\s+PRIVATE\\s+KEY[^-]*-+(?:\\s|\\r|\\n)+" +
@@ -66,6 +72,13 @@ public final class SslKeystoreCreator {
             CASE_INSENSITIVE
         );
 
+    /**
+     * Regex to match a EC private key
+     * <p>
+     *
+     * {@link https://tools.ietf.org/html/rfc5915#section-4}
+     *
+     */
     private static final Pattern EC_KEY_PATTERN = Pattern
         .compile(
             "-+BEGIN\\s+EC\\s+PRIVATE\\s+KEY[^-]*-+(?:\\s|\\r|\\n)+" +
@@ -74,7 +87,17 @@ public final class SslKeystoreCreator {
             CASE_INSENSITIVE
         );
 
-    public static KeyStore loadKeyStore(File certificateChainFile, File privateKeyFile) throws KeyStoreException, CertificateException, IOException, NoSuchAlgorithmException {
+
+    /**
+     * Returns a KeyStore from an input Certificate(s) and private key
+     *
+     * @param certificateChainFile the full path to the PEM encoded certificate chain.
+     * @param privateKeyFile the full path to the PEM encoded private key file.
+     * @return a KeyStore with the certificate chain and private key inside
+     *
+     */
+    public static KeyStore loadKeyStore(File certificateChainFile, File privateKeyFile)
+        throws KeyStoreException, CertificateException, IOException, NoSuchAlgorithmException {
 
         PrivateKey privateKey = readPrivateKey(privateKeyFile);
 
@@ -91,7 +114,16 @@ public final class SslKeystoreCreator {
         return keyStore;
     }
 
-    private static List<X509Certificate> readCertificateChain(File certificateChainFile) throws CertificateException, IOException {
+    /**
+     * 
+     * @param certificateChainFile
+     * @return
+     * @throws CertificateException
+     * @throws IOException
+     */
+    private static List<X509Certificate> readCertificateChain(File certificateChainFile)
+        throws CertificateException, IOException {
+
         String contents = readFile(certificateChainFile);
 
         Matcher matcher = CERT_PATTERN.matcher(contents);
@@ -109,15 +141,17 @@ public final class SslKeystoreCreator {
         return certificates;
     }
 
-    private static PrivateKey readPrivateKey(File keyFile) throws KeyStoreException, IOException {
+    private static PrivateKey readPrivateKey(File keyFile)
+        throws KeyStoreException, IOException {
+
         String content = readFile(keyFile);
 
         Matcher rsaMatcher = RSA_KEY_PATTERN.matcher(content);
         Matcher ecMatcher = EC_KEY_PATTERN.matcher(content);
         if (rsaMatcher.find()) {
-            byte[] encodedKey = base64Decode(rsaMatcher.group(1));
+            byte[] derBytes = base64Decode(rsaMatcher.group(1));
             try {
-                PrivateKey privateKey = readRSAPrivateKeyPKCS1PEM(encodedKey);
+                PrivateKey privateKey = readRSAPrivateKeyPKCS1PEM(derBytes);
                 return privateKey;
             } catch (Exception e) {
                 throw new KeyStoreException("Could not create private key, check your key is in unencrypted PKCS#1 PEM format"+e);
@@ -125,16 +159,29 @@ public final class SslKeystoreCreator {
         } else if (ecMatcher.find()) {
             throw new KeyStoreException("EC Keys not yet implemented!");
         } else {
-            throw new KeyStoreException("found no private key: " + keyFile);
+            throw new KeyStoreException("No private key found in file: '" + keyFile + "' Is it PKCS#1?") ;
         }
     }
 
-    private static PrivateKey readRSAPrivateKeyPKCS1PEM(byte[] encodedKey)
+    private static PrivateKey readRSAPrivateKeyPKCS1PEM(byte[] derBytes)
             throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
 
-        byte[] bytes = encodedKey;
-
+        byte[] bytes = derBytes;
         DerInputStream derReader = new DerInputStream(bytes);
+
+        // As defined in https://tools.ietf.org/html/rfc3447#appendix-A.1.2
+        // RSAPrivateKey ::= SEQUENCE {
+        //     version           Version,
+        //     modulus           INTEGER,  -- n
+        //     publicExponent    INTEGER,  -- e
+        //     privateExponent   INTEGER,  -- d
+        //     prime1            INTEGER,  -- p
+        //     prime2            INTEGER,  -- q
+        //     exponent1         INTEGER,  -- d mod (p-1)
+        //     exponent2         INTEGER,  -- d mod (q-1)
+        //     coefficient       INTEGER,  -- (inverse of q) mod p
+        //     otherPrimeInfos   OtherPrimeInfos OPTIONAL
+        // }
         DerValue[] seq = derReader.getSequence(0);
         // skip version seq[0];
         BigInteger modulus = seq[1].getBigInteger();
