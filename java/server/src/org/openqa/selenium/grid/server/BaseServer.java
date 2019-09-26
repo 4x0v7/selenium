@@ -134,8 +134,6 @@ public class BaseServer<T extends BaseServer> implements Server<T> {
 
     if (options.getSslEnabled()) {
 
-      LOG.info(String.format("Selenium Server will start on port %s with TLSv1.2 enabled", options.getPort()));
-
       try {
         File sslCertificate = new File(options.getSslCertificate());
         File sslCertificateKey = new File(options.getSslCertificateKey());
@@ -166,6 +164,7 @@ public class BaseServer<T extends BaseServer> implements Server<T> {
         https.setIdleTimeout(500000);
 
         server.setConnectors(new Connector[]{https});
+        LOG.info(String.format("Selenium Server started on port %s with TLSv1.2 enabled", options.getPort()));
       } catch (Exception e) {
         LOG.log(Level.SEVERE, "Failed to start server with SSL, check your certificates", e);
       }

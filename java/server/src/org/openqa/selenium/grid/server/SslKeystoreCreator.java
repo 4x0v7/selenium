@@ -94,7 +94,6 @@ public final class SslKeystoreCreator {
      * @param certificateChainFile the full path to the PEM encoded certificate chain.
      * @param privateKeyFile the full path to the PEM encoded private key file.
      * @return a KeyStore with the certificate chain and private key inside
-     *
      */
     public static KeyStore loadKeyStore(File certificateChainFile, File privateKeyFile)
         throws KeyStoreException, CertificateException, IOException, NoSuchAlgorithmException {
@@ -115,9 +114,14 @@ public final class SslKeystoreCreator {
     }
 
     /**
-     * 
+     * Returns a list of X509Certificate objects
+     * <p>
+     * There may be more than one certificate present in the certificate PEM file.
+     * This is often the case where the server presents it's leaf certificate, along with the
+     * intermediate authority certificate(s).
+     *
      * @param certificateChainFile
-     * @return
+     * @return List<X509Certificate>
      * @throws CertificateException
      * @throws IOException
      */
@@ -141,6 +145,17 @@ public final class SslKeystoreCreator {
         return certificates;
     }
 
+
+    /**
+     * Returns a PrivateKey from an input private key File
+     * <p>
+     * The file is expected to be a PKCS#1 PEM file
+     *
+     * @param keyFile
+     * @return
+     * @throws KeyStoreException
+     * @throws IOException
+     */
     private static PrivateKey readPrivateKey(File keyFile)
         throws KeyStoreException, IOException {
 
@@ -163,25 +178,28 @@ public final class SslKeystoreCreator {
         }
     }
 
+    /**
+     * Returns a PrivateKey from DER-encoded bytes
+     * <p>
+     * The bytes should be ASN.1 DER-encoded data, with an RSAPrivateKey structure inside
+     * as defined in PKCS#1
+     * <p>
+     * This function reads the DER-encoded bytes and constructs a RSAPrivateCrtKeySpec
+     * which is used to construct and return the PrivateKey object
+     *
+     * @param derBytes bytes to decode
+     * @return a PrivateKey
+     * @see <a href="https://tools.ietf.org/html/rfc3447#appendix-A.1.2">PKCS#1 Specification</a>
+     * @throws IOException
+     * @throws NoSuchAlgorithmException
+     * @throws InvalidKeySpecException
+     */
     private static PrivateKey readRSAPrivateKeyPKCS1PEM(byte[] derBytes)
             throws IOException, NoSuchAlgorithmException, InvalidKeySpecException {
 
         byte[] bytes = derBytes;
         DerInputStream derReader = new DerInputStream(bytes);
 
-        // As defined in https://tools.ietf.org/html/rfc3447#appendix-A.1.2
-        // RSAPrivateKey ::= SEQUENCE {
-        //     version           Version,
-        //     modulus           INTEGER,  -- n
-        //     publicExponent    INTEGER,  -- e
-        //     privateExponent   INTEGER,  -- d
-        //     prime1            INTEGER,  -- p
-        //     prime2            INTEGER,  -- q
-        //     exponent1         INTEGER,  -- d mod (p-1)
-        //     exponent2         INTEGER,  -- d mod (q-1)
-        //     coefficient       INTEGER,  -- (inverse of q) mod p
-        //     otherPrimeInfos   OtherPrimeInfos OPTIONAL
-        // }
         DerValue[] seq = derReader.getSequence(0);
         // skip version seq[0];
         BigInteger modulus = seq[1].getBigInteger();
@@ -193,8 +211,8 @@ public final class SslKeystoreCreator {
         BigInteger exp2 = seq[7].getBigInteger();
         BigInteger crtCoef = seq[8].getBigInteger();
 
-        RSAPrivateCrtKeySpec keySpec = new RSAPrivateCrtKeySpec(modulus, publicExp, privateExp, prime1, prime2, exp1,
-                exp2, crtCoef);
+        RSAPrivateCrtKeySpec keySpec = new RSAPrivateCrtKeySpec(modulus, publicExp, privateExp, prime1,
+                prime2, exp1, exp2, crtCoef);
         KeyFactory keyFactory = KeyFactory.getInstance("RSA");
         PrivateKey privateKey = keyFactory.generatePrivate(keySpec);
         return privateKey;
